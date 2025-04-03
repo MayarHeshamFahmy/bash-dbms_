@@ -43,14 +43,18 @@ case $1 in
     drop)
         read -p "Enter database name to Drop: " dbname
         if [[ -d "$DB_DIR/$dbname" ]]; then
-            rm -r "$DB_DIR/$dbname"
-            echo "Database '$dbname' deleted."
+            rm -rf "$DB_DIR/$dbname"  # Force remove all contents
+            if [[ ! -d "$DB_DIR/$dbname" ]]; then
+                echo "Database '$dbname' deleted successfully."
+            else
+                echo "Error: Failed to delete database '$dbname'."
+            fi
         else
-            echo "Database doesn't Exist."
+            echo "Error: Database doesn't exist."
         fi
         ;;
          
     *)
         echo "Invalid database operation."
         ;;
-esac
+esac 

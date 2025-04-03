@@ -8,35 +8,73 @@ case $1 in
     insert)
         read -p "Enter Table Name: " tableName
         tablePath="$DB_DIR/$dbname/$tableName"
+        metadataPath="$tablePath.meta"
 
         if [[ -f "$tablePath" ]]; then
-            while true; do
-                read -p "Enter Record ID: " recordId
+            colNum=$(awk -F, 'NR==1 {print $2}' "$metadataPath")
 
-                # Ensure ID is a number
-                if [[ ! "$recordId" =~ ^[0-9]+$ ]]; then
-                    echo "Error: ID must be a number. Try again."
+            while true; do
+                read -p "Enter Primary Key (ID): " primaryKey
+                if [[ ! "$primaryKey" =~ ^[0-9]+$ ]]; then
+                    echo "Error: Primary Key must be a number."
                     continue
                 fi
 
-                # Check if ID already exists
-                if grep -q "^$recordId," "$tablePath"; then
-                    echo "Error: ID $recordId already exists. Enter a different ID."
+                if grep -q "^$primaryKey," "$tablePath"; then
+                    echo "Error: Primary Key already exists!"
                 else
                     break
                 fi
             done
 
-            read -p "Enter Name: " name
-            read -p "Enter Age: " age
+            row="$primaryKey"
+            for ((i = 2; i <= colNum; i++)); do
+                colMeta=$(awk "NR==$((i+1))" "$metadataPath")
+                colName=$(echo "$colMeta" | cut -d',' -f1)
+                colType=$(echo "$colMeta" | cut -d',' -f2)
 
-            # Insert new record
-            echo "$recordId,$name,$age" >> "$tablePath"
+                while true; do
+                    read -p "Enter $colName ($colType): " colValue
 
-            # Sort the table by ID (ascending order)
+                    case $colType in
+                        int)
+                            if [[ ! "$colValue" =~ ^[0-9]+$ ]]; then
+                                echo "Error: $colName must be an integer!"
+                                continue
+                            fi
+                            ;;
+                        float)
+                            if [[ ! "$colValue" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+                                echo "Error: $colName must be a float!"
+                                continue
+                            fi
+                            ;;
+                        str)
+                            if [[ ! "$colValue" =~ ^[A-Za-z[:space:]]+$ ]]; then
+                                echo "Error: $colName must contain only letters and spaces!"
+                                continue
+                            fi
+                            ;;
+                        date)
+                            if [[ ! "$colValue" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                                echo "Error: $colName must be a date (YYYY-MM-DD)!"
+                                continue
+                            fi
+                            if ! date -d "$colValue" "+%Y-%m-%d" >/dev/null 2>&1; then
+                                echo "Error: Invalid date! Ensure format is YYYY-MM-DD and it's a real date."
+                                continue
+                            fi
+                            ;;
+                    esac
+                    break
+                done
+                row="$row,$colValue"
+            done
+
+            echo "$row" >> "$tablePath"
             sort -t, -k1,1n -o "$tablePath" "$tablePath"
 
-            echo "Record inserted successfully."
+            echo "Record inserted successfully!"
         else
             echo "Error: Table '$tableName' does not exist."
         fi
@@ -47,8 +85,12 @@ case $1 in
         tablePath="$DB_DIR/$dbname/$tableName"
 
         if [[ -f "$tablePath" ]]; then
-            echo "Records in Table '$tableName':"
-            awk -F, '{print "ID:", $1, "| Name:", $2, "| Age:", $3}' "$tablePath"
+            if [[ ! -s "$tablePath" ]]; then
+                echo "Table '$tableName' is empty."
+            else
+                echo "Records in Table '$tableName':"
+                column -t -s, "$tablePath"
+            fi
         else
             echo "Error: Table '$tableName' does not exist."
         fi
@@ -59,12 +101,12 @@ case $1 in
         tablePath="$DB_DIR/$dbname/$tableName"
 
         if [[ -f "$tablePath" ]]; then
-            read -p "Enter Record ID to Delete: " recordId
-            if grep -q "^$recordId," "$tablePath"; then
-                grep -v "^$recordId," "$tablePath" > "$tablePath.tmp" && mv "$tablePath.tmp" "$tablePath"
-                echo "Record with ID $recordId deleted successfully."
+            read -p "Enter Primary Key to Delete: " primaryKey
+            if grep -q "^$primaryKey," "$tablePath"; then
+                grep -v "^$primaryKey," "$tablePath" > "$tablePath.tmp" && mv "$tablePath.tmp" "$tablePath"
+                echo "Record with Primary Key $primaryKey deleted."
             else
-                echo "Error: Record with ID $recordId not found."
+                echo "Error: Record with Primary Key $primaryKey not found."
             fi
         else
             echo "Error: Table '$tableName' does not exist."
@@ -74,13 +116,55 @@ case $1 in
     update)
         read -p "Enter Table Name: " tableName
         tablePath="$DB_DIR/$dbname/$tableName"
+        metadataPath="$tablePath.meta"
 
         if [[ -f "$tablePath" ]]; then
             read -p "Enter Record ID to Update: " recordId
             if grep -q "^$recordId," "$tablePath"; then
-                read -p "Enter New Name: " name
-                read -p "Enter New Age: " age
-                awk -F, -v id="$recordId" -v newName="$name" -v newAge="$age" 'BEGIN { OFS = "," } { if ($1 == id) { $2 = newName; $3 = newAge } print }' "$tablePath" > "$tablePath.tmp" && mv "$tablePath.tmp" "$tablePath"
+                newRow="$recordId"
+                for ((i = 2; i <= colNum; i++)); do
+                    colMeta=$(awk "NR==$((i+1))" "$metadataPath")
+                    colName=$(echo "$colMeta" | cut -d',' -f1)
+                    colType=$(echo "$colMeta" | cut -d',' -f2)
+
+                    while true; do
+                        read -p "Enter new value for $colName ($colType): " colValue
+
+                        case $colType in
+                            int)
+                                if [[ ! "$colValue" =~ ^[0-9]+$ ]]; then
+                                    echo "Error: $colName must be an integer!"
+                                    continue
+                                fi
+                                ;;
+                            float)
+                                if [[ ! "$colValue" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+                                    echo "Error: $colName must be a float!"
+                                    continue
+                                fi
+                                ;;
+                            str)
+                                if [[ ! "$colValue" =~ ^[A-Za-z[:space:]]+$ ]]; then
+                                    echo "Error: $colName must contain only letters and spaces!"
+                                    continue
+                                fi
+                                ;;
+                            date)
+                                if [[ ! "$colValue" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                                    echo "Error: $colName must be a date (YYYY-MM-DD)!"
+                                    continue
+                                fi
+                                if ! date -d "$colValue" "+%Y-%m-%d" >/dev/null 2>&1; then
+                                    echo "Error: Invalid date! Ensure format is YYYY-MM-DD and it's a real date."
+                                    continue
+                                fi
+                                ;;
+                        esac
+                        break
+                    done
+                    newRow="$newRow,$colValue"
+                done
+                awk -F, -v id="$recordId" -v newRow="$newRow" 'BEGIN { OFS = "," } { if ($1 == id) print newRow; else print }' "$tablePath" > "$tablePath.tmp" && mv "$tablePath.tmp" "$tablePath"
                 echo "Record with ID $recordId updated successfully."
             else
                 echo "Error: Record with ID $recordId not found."
